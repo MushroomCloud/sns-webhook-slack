@@ -69,18 +69,6 @@ slack:
         us-east-1: aws-billing-prod
         us-east-2: aws-billing-test
 
-influxdb:
-   prod:
-      url: http://prod-influxdb.example.com:8086
-      token: "<INFLUXDB_TOKEN>"
-      org: YourOrg
-      bucket: BucketName
-   test:
-      url: http://test-influxdb.example.com:8086
-      token: "<INFLUXDB_TOKEN>"
-      org: YourOrg
-      bucket: BucketName
-
 environments:
    us-east-1: prod
    us-east-2: test

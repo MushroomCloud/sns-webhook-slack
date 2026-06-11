@@ -31,7 +31,6 @@ class TestHealthCheck:
         data = json.loads(response.data)
         assert data['status'] == 'ok'
         assert 'crypto_available' in data
-        assert 'influxdb_available' in data
         assert data['secure'] is True
 
 
@@ -322,25 +321,3 @@ class TestExceptionHandling:
         assert data['status'] == 'error'
 
 
-class TestInfluxDBIntegration:
-    @patch('webhook.InfluxDBLogger.log_autoscaling_event')
-    @patch('webhook.SlackNotifier.send_notification')
-    def test_autoscaling_logs_to_influxdb(self, mock_slack, mock_influx, client):
-        mock_slack.return_value = {'ok': True}
-        payload = {
-            'Type': 'Notification',
-            'TopicArn': 'arn:aws:sns:us-east-1:123456789012:autoscaling',
-            'Subject': 'Auto Scaling',
-            'Message': json.dumps({
-                'Event': 'autoscaling:EC2_INSTANCE_LAUNCH',
-                'AutoScalingGroupName': 'my-asg',
-                'AvailabilityZone': 'us-east-1a',
-            }),
-        }
-        response = client.post(
-            '/',
-            data=json.dumps(payload),
-            content_type='application/json',
-        )
-        assert response.status_code == 200
-        mock_influx.assert_called_once()

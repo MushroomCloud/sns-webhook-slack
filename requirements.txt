@@ -3,7 +3,6 @@ boto3
 zappa
 awsudo
 awscli
-influxdb-client
 requests
 setuptools
 cryptography

@@ -6,20 +6,6 @@ import pytest
 
 
 class TestImportFallbacks:
-    def test_influxdb_import_failure(self):
-        """Test that INFLUXDB_AVAILABLE is False when influxdb_client is not importable."""
-        import webhook
-        original_value = webhook.INFLUXDB_AVAILABLE
-
-        # Simulate import failure by temporarily removing the module
-        with patch.dict(sys.modules, {'influxdb_client': None, 'influxdb_client.client.write_api': None}):
-            # We can't easily re-trigger the import, but we can test the behavior
-            # when INFLUXDB_AVAILABLE is False
-            webhook.INFLUXDB_AVAILABLE = False
-            logger = webhook.InfluxDBLogger({'influxdb': {}})
-            assert logger.enabled is False
-            webhook.INFLUXDB_AVAILABLE = original_value
-
     def test_crypto_import_failure(self):
         """Test that CRYPTO_AVAILABLE is False when cryptography is not importable."""
         import webhook

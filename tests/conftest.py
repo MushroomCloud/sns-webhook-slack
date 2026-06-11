@@ -32,14 +32,6 @@ def test_config():
             'us-east-1': 'prod',
             'us-east-2': 'test',
         },
-        'influxdb': {
-            'prod': {
-                'url': 'http://localhost:8086',
-                'token': 'test-token',
-                'org': 'TestOrg',
-                'bucket': 'TestBucket',
-            },
-        },
     }
 
 

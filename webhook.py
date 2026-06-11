@@ -30,14 +30,6 @@ from urllib.parse import urlparse
 from functools import wraps
 from flask import Flask, request, jsonify, make_response, Response
 
-# Try to import InfluxDB (optional)
-try:
-    from influxdb_client import InfluxDBClient, Point, WritePrecision
-    from influxdb_client.client.write_api import SYNCHRONOUS
-    INFLUXDB_AVAILABLE = True
-except ImportError:
-    INFLUXDB_AVAILABLE = False
-
 # Try to import cryptography (often fails in Lambda)
 try:
     from cryptography import x509
@@ -73,7 +65,6 @@ class Config(TypedDict):
     """Type definition for application configuration."""
     security: SecurityConfig
     slack: SlackConfig
-    influxdb: Optional[Dict[str, Dict[str, str]]]
     environments: Optional[Dict[str, str]]
 
 
@@ -728,89 +719,6 @@ def _get_slack_channel(config: Config, notification_type: str, region: str) -> s
     return 'notifications'
 
 
-class InfluxDBLogger:
-    """Handle logging of autoscaling events to InfluxDB."""
-
-    def __init__(self, config: Config):
-        """Initialize InfluxDB logger with configuration."""
-        self.config = config
-        self.enabled = INFLUXDB_AVAILABLE and 'influxdb' in config
-
-    def log_autoscaling_event(self, message: Dict[str, Any]) -> None:
-        """Log autoscaling event to InfluxDB."""
-        if not self.enabled:
-            return
-
-        try:
-            region = self._extract_region(message.get('AvailabilityZone', ''))
-            if not region:
-                return
-
-            if region not in self.config.get('environments', {}):
-                return
-
-            count_before, count_after = self._extract_capacity_changes(message.get('Cause', ''))
-            if count_before == 0 and count_after == 0:
-                return
-
-            self._write_to_influxdb(message, region, count_before, count_after)
-
-        except Exception as e:
-            print(f'Logging to InfluxDB failed: {e}')
-
-    def _extract_region(self, availability_zone: str) -> Optional[str]:
-        """Extract region from availability zone."""
-        match = re.search(r'^([a-z]+-[a-z]+-\d+)', availability_zone)
-        return match.group(1) if match else None
-
-    def _extract_capacity_changes(self, cause: str) -> tuple[int, int]:
-        """Extract capacity changes from cause message."""
-        increasing_matches = re.findall(r'increasing the capacity from (\d+) to (\d+)', cause)
-        if increasing_matches:
-            return int(increasing_matches[0][0]), int(increasing_matches[0][1])
-
-        decreasing_matches = re.findall(r'shrinking the capacity from (\d+) to (\d+)', cause)
-        if decreasing_matches:
-            return int(decreasing_matches[0][0]), int(decreasing_matches[0][1])
-
-        return 0, 0
-
-    def _write_to_influxdb(self, message: Dict[str, Any], region: str, count_before: int, count_after: int) -> None:
-        """Write event data to InfluxDB."""
-        if not INFLUXDB_AVAILABLE:
-            return
-
-        environment = self.config['environments'][region]
-        influxdb_config = self.config['influxdb'][environment]
-
-        asg = message['AutoScalingGroupName'].split('-')
-        application = asg[0]
-
-        client = InfluxDBClient(
-            url=influxdb_config['url'],
-            token=influxdb_config['token'],
-            org=influxdb_config['org']
-        )
-
-        try:
-            point = Point('ec2_autoscaling') \
-                .tag('application', application) \
-                .field('availability_zone', message['AvailabilityZone']) \
-                .field('autoscaling_group', message['AutoScalingGroupName']) \
-                .field('count_before', count_before) \
-                .field('count_after', count_after)
-
-            write_api = client.write_api(write_options=SYNCHRONOUS)
-            write_api.write(
-                influxdb_config['bucket'],
-                influxdb_config['org'],
-                point,
-                write_precision=WritePrecision.S
-            )
-        finally:
-            client.close()
-
-
 class SlackNotifier:
     """Handle sending notifications to Slack."""
 
@@ -873,7 +781,6 @@ def create_app(config: Config = None) -> Flask:
     if config is None:
         config = load_config()
 
-    influxdb_logger = InfluxDBLogger(config)
     slack_notifier = SlackNotifier(config)
     security_validator = SecurityValidator(config.get('security', {}))
 
@@ -901,8 +808,7 @@ def create_app(config: Config = None) -> Flask:
         return make_response(jsonify({
             'status': 'ok',
             'secure': True,
-            'crypto_available': CRYPTO_AVAILABLE,
-            'influxdb_available': INFLUXDB_AVAILABLE
+            'crypto_available': CRYPTO_AVAILABLE
         }), 200)
 
     @app.route('/', methods=['POST'])
@@ -969,10 +875,6 @@ def create_app(config: Config = None) -> Flask:
 
                 if _should_skip_notification(sns_message):
                     return make_response(jsonify({'status': 'ok', 'skipped': True}), 200)
-
-                # Log to InfluxDB if applicable
-                if notification_type == NOTIFICATION_TYPES.AUTOSCALING:
-                    influxdb_logger.log_autoscaling_event(sns_message)
 
                 # Send to Slack
                 region = sns_payload.get('TopicArn', '').split(':')[3] if ':' in sns_payload.get('TopicArn', '') else 'us-east-1'
